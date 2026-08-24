@@ -76,8 +76,11 @@ Set on the `openllm-onboarding` row in `cordis.patch.yml`:
 | `cloudOrigin` | `https://openllm.sh` | gateway origin (self-hosted / preview) |
 
 Point the router at a self-hosted gateway with `OPENLLM_API_BASE`
-(e.g. `http://127.0.0.1:8787`). The key comes from `OPENLLM_API_KEY`
-(env · dsh credentials · `~/.openllm/.env`) and is never written into YAML.
+(e.g. `http://127.0.0.1:8787`). The key comes from `OPENLLM_API_KEY` and is never
+written into YAML. At launch the plugin also reads the shared `~/.openllm/.env`
+(written by the OpenLLM installer/daemon) and hydrates `process.env` for any
+`OPENLLM_*` value not already set — so a key/origin that lives only in that file
+reaches both the setup check and the router (process env still wins).
 
 ## Develop
 

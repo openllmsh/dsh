@@ -4,8 +4,11 @@
  * A DeepSeek Harness (Cordis) host plugin that, at launch, checks whether the
  * OpenLLM CLI (`openllm`) + daemon (`openllmd`) and an `sk-llm-…` key are
  * present, and if not either installs them (consent-gated, via the `/openllm-setup`
- * slash command) or prints step-by-step guidance. The router + MCP wiring itself
- * is pure config in `cordis.patch.yml`; this file only handles first-run setup.
+ * slash command) or prints step-by-step guidance. It also hydrates
+ * `process.env` from the shared `~/.openllm/.env` (written by the OpenLLM
+ * installer/daemon) so a key/origin that lives only in that file reaches both
+ * this detection and dsh's pi-ai router. The router + MCP wiring itself is pure
+ * config in `cordis.patch.yml`; this file only handles first-run setup.
  *
  * Design constraints (see docs in the openllm repo,
  * `docs/proposals/deepseek-harness-plugin.md`):
@@ -22,6 +25,9 @@
  *     never to stdout, and we never throw out of `apply`.
  */
 
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import z from "@deepseek-ai/schemastery";
 // `ctx.subprocess` / `ctx.commands` shapes come from the local ambient shim
@@ -51,18 +57,73 @@ export const Config: z<Config> = z.object({
 const CLI = "openllm";
 const DAEMON = "openllmd";
 const KEY_ENV = "OPENLLM_API_KEY";
+const ORIGIN_ENV = "OPENLLM_CLOUD_ORIGIN";
+const BASE_ENV = "OPENLLM_API_BASE";
 const CLI_ONLY_INSTALL =
   "https://raw.githubusercontent.com/openllmsh/cli/main/install.sh";
 
+/** The shared env file the OpenLLM installer/daemon write (`~/.openllm/.env`). */
+const sharedEnvFile = (): string => {
+  const home = process.env.HOME && process.env.HOME.length > 0 ? process.env.HOME : homedir();
+  return join(home, ".openllm", ".env");
+};
+
+/**
+ * Parse a `KEY=VALUE` env file (comments + blank lines ignored, surrounding
+ * quotes stripped) — mirrors the OpenLLM CLI's own reader so both agree on the
+ * shared file's shape.
+ */
+const parseEnvFile = (path: string): Record<string, string> => {
+  const out: Record<string, string> = {};
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return out; // missing / unreadable → env-only resolution
+  }
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (t.length === 0 || t.startsWith("#")) continue;
+    const eq = t.indexOf("=");
+    if (eq <= 0) continue;
+    out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+  }
+  return out;
+};
+
+/**
+ * Hydrate `process.env` from `~/.openllm/.env` for any OpenLLM keys not already
+ * set, matching the CLI's precedence (process env wins, the file fills gaps).
+ * This is why the LLM router works when the installer wrote the key only to the
+ * file: dsh's pi-ai adapter resolves `apiKeyEnv: OPENLLM_API_KEY` from the
+ * environment (lazily, at request time), so the hydrated value reaches it, and
+ * `OPENLLM_API_BASE` (derived from `OPENLLM_CLOUD_ORIGIN`) reaches the router's
+ * `baseURL`. Returns whether a usable key is now present.
+ */
+function hydrateSharedEnv(): boolean {
+  const file = parseEnvFile(sharedEnvFile());
+  if (!process.env[KEY_ENV] && file[KEY_ENV]) process.env[KEY_ENV] = file[KEY_ENV];
+  // The router reads OPENLLM_API_BASE; the shared file stores the origin as
+  // OPENLLM_CLOUD_ORIGIN. Seed API_BASE from either when it isn't already set.
+  if (!process.env[BASE_ENV]) {
+    const origin = process.env[ORIGIN_ENV] ?? file[BASE_ENV] ?? file[ORIGIN_ENV];
+    if (origin) process.env[BASE_ENV] = origin.replace(/\/+$/, "");
+  }
+  return Boolean(process.env[KEY_ENV]);
+}
+
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const log = ctx.logger(name);
+
+  // Read the shared ~/.openllm/.env into the environment first, so both the
+  // detection below and dsh's pi-ai router see a key/origin written only there.
+  const keyPresent = hydrateSharedEnv();
 
   // Cheap probes only — never await the installer here.
   const [cliPresent, daemonPresent] = await Promise.all([
     probe(ctx, CLI),
     config.installDaemon ? probe(ctx, DAEMON) : Promise.resolve(true),
   ]);
-  const keyPresent = Boolean(process.env[KEY_ENV]);
 
   if (cliPresent && daemonPresent && keyPresent) return; // fully set up — stay silent.
 
