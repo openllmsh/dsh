@@ -1,5 +1,5 @@
 /**
- * @openllm/dsh — onboarding plugin.
+ * @openllmsh/dsh — onboarding plugin.
  *
  * A DeepSeek Harness (Cordis) host plugin that, at launch, checks whether the
  * OpenLLM CLI (`openllm`) + daemon (`openllmd`) and an `sk-llm-…` key are

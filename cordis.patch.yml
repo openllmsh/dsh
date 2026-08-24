@@ -1,4 +1,4 @@
-# @openllm/dsh — DeepSeek Harness bundle patch.
+# @openllmsh/dsh — DeepSeek Harness bundle patch.
 #
 # Layered AFTER @deepseek-ai/dsh-base, which already mounts `llm`,
 # `llm-pi-ai` (dormant), `llm-deepseek`, and `agent-default-model`. This patch:
@@ -41,7 +41,7 @@
         env: {}
 
     - id: openllm-onboarding
-      name: '@openllm/dsh'
+      name: '@openllmsh/dsh'
       config:
         autoInstall: prompt      # prompt | never — never fully silent; consent required
         installDaemon: true      # daemon needed only for subscription providers / local gateway

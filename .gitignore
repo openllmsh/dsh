@@ -1,5 +1,5 @@
 node_modules/
-# lib/ is committed on purpose — @openllm/dsh is served from GitHub (no npm), and
+# lib/ is committed on purpose — @openllmsh/dsh is served from GitHub (no npm), and
 # a committed build lets `dsh plugin add github:openllmsh/dsh` load without a
 # prepare script (pnpm would otherwise gate a git dependency's build behind an
 # allowBuilds allowlist). Rebuild with `pnpm build` and commit before pushing.

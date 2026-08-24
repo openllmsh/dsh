@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<p align="center"><b>@openllm/dsh</b> — route DeepSeek Harness through OpenLLM.</p>
+<p align="center"><b>@openllmsh/dsh</b> — route DeepSeek Harness through OpenLLM.</p>
 
 <p align="center">
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>

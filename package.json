@@ -1,5 +1,5 @@
 {
-  "name": "@openllm/dsh",
+  "name": "@openllmsh/dsh",
   "version": "0.1.0",
   "description": "DeepSeek Harness (dsh) bundle that routes the harness through the OpenLLM gateway (OpenAI-compatible) and registers the OpenLLM MCP server, with a boot-time onboarding step that installs or guides the OpenLLM CLI + daemon.",
   "keywords": ["dsh-plugin", "deepseek-harness", "cordis", "openllm", "mcp", "llm-gateway"],
