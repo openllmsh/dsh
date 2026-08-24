@@ -11,7 +11,8 @@
     "outDir": "lib",
     "rootDir": "src",
     "skipLibCheck": true,
-    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "isolatedModules": true
   },
   "include": ["src"]

@@ -24,9 +24,8 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import z from "@deepseek-ai/schemastery";
-// Type-only: pull in the Context augmentations for the services we touch.
-import type {} from "@deepseek-ai/dsh-subprocess";
-import type {} from "@deepseek-ai/dsh-commands";
+// `ctx.subprocess` / `ctx.commands` shapes come from the local ambient shim
+// (src/dsh-augment.d.ts); the real services are provided by the running dsh.
 
 export const name = "openllm-onboarding";
 
