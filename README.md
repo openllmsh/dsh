@@ -37,10 +37,12 @@ Runs on the host DeepSeek Harness — the services it patches
 ## Install
 
 ```sh
-dsh plugin --profile default add @openllm/dsh
-# or straight from git:
 dsh plugin --profile default add github:openllmsh/dsh
 ```
+
+Distributed from GitHub — no npm package. The built `lib/` is committed, so the
+git install loads with no build step (and no pnpm `allowBuilds` prompt). Pin a
+release with `github:openllmsh/dsh#<tag>`.
 
 Restart the profile. If OpenLLM isn't set up yet, follow the printed guidance
 (or run `/openllm-setup` in a session):
@@ -81,12 +83,15 @@ Point the router at a self-hosted gateway with `OPENLLM_API_BASE`
 
 ```sh
 pnpm install
-pnpm build            # tsdown → lib/onboarding.mjs (+ .d.mts)
+pnpm build            # tsdown → lib/onboarding.mjs (+ .d.mts) — commit the result
 pnpm typecheck        # tsc --noEmit
 
 dsh plugin --profile demo add .          # link this bundle into a scratch profile
 dsh --profile demo --dump-config         # inspect the composed plugin tree
 ```
+
+> `lib/` is committed (GitHub is the only distribution channel), so **rebuild and
+> commit it whenever `src/` changes** — a stale `lib/` is what git installs.
 
 > Developer preview — dsh is pre-1.0; pin and re-test against each `dsh` bump.
 
