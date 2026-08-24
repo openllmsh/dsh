@@ -1,0 +1,48 @@
+# @openllm/dsh — DeepSeek Harness bundle patch.
+#
+# Layered AFTER @deepseek-ai/dsh-base, which already mounts `llm`,
+# `llm-pi-ai` (dormant), `llm-deepseek`, and `agent-default-model`. This patch:
+#   1. teaches the in-box pi-ai adapter an `openllm` OpenAI-compatible provider,
+#   2. points the default conversation model at it,
+#   3. registers the OpenLLM MCP server over stdio,
+#   4. mounts this bundle's onboarding plugin (installs/guides the OpenLLM CLI).
+#
+# Secrets never live here. `apiKeyEnv` names an env/credential reference; the
+# value comes from the shell env, dsh credentials, or ~/.openllm/.env.
+
+# 1 + 2 — Router: OpenLLM provider on pi-ai, and the default model.
+- id: llm-pi-ai
+  config:
+    providers:
+      openllm:
+        displayName: OpenLLM
+        api: openai-completions
+        baseURL: !!js '`${process.env.OPENLLM_API_BASE ?? "https://openllm.sh"}/v1`'
+        apiKeyEnv: OPENLLM_API_KEY
+        models:
+          - { id: ultra, name: "ultra (OpenLLM)", contextWindow: 262144, maxTokens: 16384 }
+          - { id: plus,  name: "plus (OpenLLM)",  contextWindow: 262144, maxTokens: 16384 }
+          - { id: lite,  name: "lite (OpenLLM)",  contextWindow: 131072, maxTokens: 8192 }
+
+- id: agent-default-model
+  config:
+    provider: openllm
+    model: ultra
+
+# 3 + 4 — MCP server (stdio) + onboarding.
+- insert:
+    - id: mcp-openllm
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: openllm
+        transport: stdio
+        command: openllm
+        args: ['mcp']
+        env: {}
+
+    - id: openllm-onboarding
+      name: '@openllm/dsh'
+      config:
+        autoInstall: prompt      # prompt | never — never fully silent; consent required
+        installDaemon: true      # daemon needed only for subscription providers / local gateway
+        cloudOrigin: https://openllm.sh
