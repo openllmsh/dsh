@@ -63,9 +63,16 @@ others — the **browser UI lives only in the `web` profile** (`web` mounts
 The bare `default` profile is `dsh-base` only — no web surface — so adding the
 bundle there never reaches the web UI.
 
+Browser UI (`web` profile):
+
 ```sh
-dsh plugin --profile web add github:openllmsh/dsh        # browser UI
-dsh plugin --profile headless add github:openllmsh/dsh   # headless / CLI
+dsh plugin --profile web add github:openllmsh/dsh
+```
+
+Headless / CLI (`headless` profile):
+
+```sh
+dsh plugin --profile headless add github:openllmsh/dsh
 ```
 
 Then **restart the profile**. Distributed from GitHub — no npm package. The built
