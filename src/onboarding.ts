@@ -93,7 +93,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
 
   // Print guidance now — works in every surface, including headless / ACP.
-  log.warn(guidanceText(config, { ...state, hasCommand: Boolean(commands) }));
+  // NOTE: cordis inverts log verbosity (ERROR=0, INFO=1, WARN=2, DEBUG=3) and
+  // the default visible level is 1, so `warn`/`debug` are hidden by default.
+  // Human-facing guidance MUST go through `info` (or `error`) to be seen.
+  log.info(guidanceText(config, { ...state, hasCommand: Boolean(commands) }));
 
   // In an interactive UI, additionally offer a real "Install now?" prompt. Fire
   // it WITHOUT awaiting: the human may take a while, and Loader settlement waits
@@ -140,7 +143,7 @@ async function promptInstall(
     });
     const chosen = answer.answers.find((a) => a.id === "openllm-install")?.selected ?? [];
     if (!chosen.includes("Install")) return; // declined.
-    ctx.logger(name).warn(await runSetup(ctx, config, state));
+    ctx.logger(name).info(await runSetup(ctx, config, state));
   } finally {
     disposeAbort();
   }
@@ -193,7 +196,7 @@ async function runSetup(
 
   const outcome = await handle.done;
   if (outcome.exitCode !== 0) {
-    log.warn(`OpenLLM installer exited with code ${String(outcome.exitCode)}`);
+    log.error(`OpenLLM installer exited with code ${String(outcome.exitCode)}`);
     return [
       `OpenLLM installer exited with code ${String(outcome.exitCode)}.`,
       "",

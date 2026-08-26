@@ -33,7 +33,7 @@ function config(overrides = {}) {
  * `exitCode` is the stubbed installer result. Every seam records its calls.
  */
 function makeCtx({ present = [], hasCommands = true, exitCode = 0, answer = null } = {}) {
-  const calls = { warn: [], info: [], spawns: [], registered: [], effects: [], resolved: [], asked: [] };
+  const calls = { info: [], warn: [], error: [], spawns: [], registered: [], effects: [], resolved: [], asked: [] };
   const commands = {
     register(def) {
       calls.registered.push(def);
@@ -55,7 +55,12 @@ function makeCtx({ present = [], hasCommands = true, exitCode = 0, answer = null
         };
   const ctx = {
     logger() {
-      return { warn: (m) => calls.warn.push(m), info: (m) => calls.info.push(m) };
+      // cordis default level hides `warn`/`debug`; the plugin uses info/error.
+      return {
+        info: (m) => calls.info.push(m),
+        warn: (m) => calls.warn.push(m),
+        error: (m) => calls.error.push(m),
+      };
     },
     subprocess: {
       async resolveExecutable(command) {
@@ -108,7 +113,7 @@ describe("apply — probe + guidance", () => {
   test("stays fully silent when CLI and daemon are present", async () => {
     const { ctx, calls } = makeCtx({ present: ["openllm", "openllmd"] });
     await apply(ctx, config());
-    assert.equal(calls.warn.length, 0, "no guidance when set up");
+    assert.equal(calls.info.length, 0, "no guidance when set up");
     assert.equal(calls.registered.length, 0, "no command when set up");
     assert.equal(calls.spawns.length, 0);
   });
@@ -122,7 +127,7 @@ describe("apply — probe + guidance", () => {
   test("a present CLI but missing daemon still prompts to install", async () => {
     const { ctx, calls } = makeCtx({ present: ["openllm"] });
     await apply(ctx, config());
-    assert.equal(calls.warn.length, 1, "daemon absence must not be silent");
+    assert.equal(calls.info.length, 1, "daemon absence must not be silent");
     assert.equal(calls.registered.length, 1);
   });
 
@@ -131,8 +136,8 @@ describe("apply — probe + guidance", () => {
     await apply(ctx, config());
 
     assert.equal(calls.registered.length, 1);
-    assert.equal(calls.warn.length, 1);
-    const text = calls.warn[0];
+    assert.equal(calls.info.length, 1);
+    const text = calls.info[0];
 
     assert.match(text, /curl -fsSL https:\/\/www\.openllm\.sh\/install \| bash/);
     assert.match(text, /openllm start/);
@@ -148,18 +153,18 @@ describe("apply — probe + guidance", () => {
     assert.doesNotMatch(text, /export /);
   });
 
-  test("headless (no commands service) still warns, registers nothing, omits the /openllm-setup hint", async () => {
+  test("headless (no commands service) still prints guidance, registers nothing, omits the /openllm-setup hint", async () => {
     const { ctx, calls } = makeCtx({ present: [], hasCommands: false });
     await apply(ctx, config());
     assert.equal(calls.registered.length, 0);
-    assert.equal(calls.warn.length, 1);
-    assert.doesNotMatch(calls.warn[0], /\/openllm-setup/);
+    assert.equal(calls.info.length, 1);
+    assert.doesNotMatch(calls.info[0], /\/openllm-setup/);
   });
 
   test("custom cloudOrigin flows into the printed install command", async () => {
     const { ctx, calls } = makeCtx({ present: [] });
     await apply(ctx, config({ cloudOrigin: "https://dev.openllm.sh" }));
-    assert.match(calls.warn[0], /curl -fsSL https:\/\/dev\.openllm\.sh\/install \| bash/);
+    assert.match(calls.info[0], /curl -fsSL https:\/\/dev\.openllm\.sh\/install \| bash/);
   });
 });
 
@@ -204,7 +209,7 @@ describe("/openllm-setup — install bridge", () => {
     assert.equal(calls.spawns.length, 0, "must not spawn when autoInstall is never");
     assert.match(text, /curl -fsSL https:\/\/www\.openllm\.sh\/install \| bash/);
     // The prompt hint is suppressed for `never`, even at apply time.
-    assert.doesNotMatch(calls.warn[0], /\/openllm-setup/);
+    assert.doesNotMatch(calls.info[0], /\/openllm-setup/);
   });
 
   test("a failed installer surfaces the exit code and falls back to guidance", async () => {
@@ -213,7 +218,7 @@ describe("/openllm-setup — install bridge", () => {
     const text = await invokeSetup(calls);
     assert.match(text, /exited with code 1/);
     assert.match(text, /curl -fsSL https:\/\/www\.openllm\.sh\/install \| bash/);
-    assert.ok(calls.warn.some((m) => /exited with code 1/.test(m)), "the exit code is logged");
+    assert.ok(calls.error.some((m) => /exited with code 1/.test(m)), "the exit code is logged");
   });
 });
 
@@ -240,13 +245,13 @@ describe("interactive install prompt (userQuestions)", () => {
     assert.equal(calls.spawns.length, 0, "declining installs nothing");
   });
 
-  test("headless (no provider) never prompts, but still warns + registers the command", async () => {
+  test("headless (no provider) never prompts, but still prints guidance + registers the command", async () => {
     const { ctx, calls } = makeCtx({ present: [], answer: null });
     await apply(ctx, config());
     await flush();
     assert.equal(calls.asked.length, 0, "no prompt without a provider");
     assert.equal(calls.spawns.length, 0);
-    assert.equal(calls.warn.length, 1);
+    assert.equal(calls.info.length, 1);
     assert.equal(calls.registered.length, 1);
   });
 
