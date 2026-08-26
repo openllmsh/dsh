@@ -6,9 +6,7 @@ declare const inject: string[];
 interface Config {
   /** `prompt` — `/openllm-setup` runs the installer. `never` — guidance only. */
   autoInstall: "prompt" | "never";
-  /** Install the daemon too (needed for subscription providers / local gateway). */
-  installDaemon: boolean;
-  /** Gateway origin used by the installer and non-prod deployments. */
+  /** Origin the installer fetches OpenLLM from (self-hosted / preview). */
   cloudOrigin: string;
 }
 declare const Config: z<Config>;

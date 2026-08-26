@@ -5,10 +5,14 @@
 #   1. teaches the in-box pi-ai adapter an `openllm` OpenAI-compatible provider,
 #   2. points the default conversation model at it,
 #   3. registers the OpenLLM MCP server over stdio,
-#   4. mounts this bundle's onboarding plugin (installs/guides the OpenLLM CLI).
+#   4. mounts this bundle's install-bridge plugin (installs the OpenLLM CLI;
+#      credential onboarding is OpenLLM's own — `openllm start`).
 #
-# Secrets never live here. `apiKeyEnv` names an env/credential reference; the
-# value comes from the shell env, dsh credentials, or ~/.openllm/.env.
+# No secrets, and none needed. dsh reaches OpenLLM through the daemon's
+# local-first gateway on 127.0.0.1:8787 — a loopback surface with no auth gate:
+# the daemon fetches signed plans with its OWN ~/.openllm/.env credentials and
+# forwards upstream. So dsh holds no API key and no origin; `openllmd` just has
+# to be running (the install bridge below sets it up via `openllm start`).
 
 # 1 + 2 — Router: OpenLLM provider on pi-ai, and the default model.
 - id: llm-pi-ai
@@ -17,8 +21,8 @@
       openllm:
         displayName: OpenLLM
         api: openai-completions
-        baseURL: !!js '`${process.env.OPENLLM_API_BASE ?? "https://openllm.sh"}/v1`'
-        apiKeyEnv: OPENLLM_API_KEY
+        # Local daemon gateway — no apiKeyEnv (the loopback surface ignores auth).
+        baseURL: http://127.0.0.1:8787/v1
         models:
           - { id: ultra, name: "ultra (OpenLLM)", contextWindow: 262144, maxTokens: 16384 }
           - { id: plus,  name: "plus (OpenLLM)",  contextWindow: 262144, maxTokens: 16384 }
@@ -44,5 +48,4 @@
       name: '@openllmsh/dsh'
       config:
         autoInstall: prompt      # prompt | never — never fully silent; consent required
-        installDaemon: true      # daemon needed only for subscription providers / local gateway
-        cloudOrigin: https://openllm.sh
+        cloudOrigin: https://www.openllm.sh   # where the installer fetches openllm from

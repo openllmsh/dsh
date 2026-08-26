@@ -1,33 +1,35 @@
 /**
- * @openllmsh/dsh — onboarding plugin.
+ * @openllmsh/dsh — install bridge.
  *
  * A DeepSeek Harness (Cordis) host plugin that, at launch, checks whether the
- * OpenLLM CLI (`openllm`) + daemon (`openllmd`) and an `sk-llm-…` key are
- * present, and if not either installs them (consent-gated, via the `/openllm-setup`
- * slash command) or prints step-by-step guidance. It also hydrates
- * `process.env` from the shared `~/.openllm/.env` (written by the OpenLLM
- * installer/daemon) so a key/origin that lives only in that file reaches both
- * this detection and dsh's pi-ai router. The router + MCP wiring itself is pure
- * config in `cordis.patch.yml`; this file only handles first-run setup.
+ * OpenLLM CLI (`openllm`) + daemon (`openllmd`) are present, and if not either
+ * installs them (consent-gated, via the `/openllm-setup` slash command) or
+ * prints a short install hint.
  *
- * Design constraints (see docs in the openllm repo,
- * `docs/proposals/deepseek-harness-plugin.md`):
+ * That is ALL it does. It handles no credentials — no key, no origin, no
+ * `~/.openllm/.env` parsing. dsh reaches OpenLLM two ways, and neither needs
+ * anything from this plugin:
+ *   - the MCP server (`openllm mcp`) is a subprocess of the `openllm` binary,
+ *     which resolves `~/.openllm/.env` itself;
+ *   - the LLM router (`cordis.patch.yml`) points at the daemon's local-first
+ *     gateway on `127.0.0.1:8787`, a loopback surface with no auth gate — the
+ *     daemon fetches signed plans with its own `~/.openllm/.env` credentials and
+ *     forwards upstream.
+ *
+ * So the daemon must be running (that is what `openllm start` sets up), but the
+ * key + origin live only with the daemon, never in dsh.
+ *
+ * Design constraints:
  *   - Named exports only; NO default export (a default export drops `inject`).
  *   - NEVER await the installer inside `apply()` — Loader settlement +
  *     `assertEntriesActivated` wait on the returned promise, so a hung install
  *     would hang the whole harness. `apply` does cheap probes only; the install
  *     runs from the `/openllm-setup` command handler (explicit user intent).
- *   - `scrubbedParentEnv()` strips any env key matching `*KEY*`, so
- *     `OPENLLM_API_KEY` is not inherited by a spawned child — it must be passed
- *     explicitly in `spec.env`.
  *   - Headless / ACP have no user-questions provider and their stdout is
  *     load-bearing (assistant text / JSON-RPC), so guidance goes to the logger,
  *     never to stdout, and we never throw out of `apply`.
  */
 
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import z from "@deepseek-ai/schemastery";
 // `ctx.subprocess` / `ctx.commands` shapes come from the local ambient shim
@@ -42,110 +44,54 @@ export const inject = ["subprocess"];
 export interface Config {
   /** `prompt` — `/openllm-setup` runs the installer. `never` — guidance only. */
   autoInstall: "prompt" | "never";
-  /** Install the daemon too (needed for subscription providers / local gateway). */
-  installDaemon: boolean;
-  /** Gateway origin used by the installer and non-prod deployments. */
+  /** Origin the installer fetches OpenLLM from (self-hosted / preview). */
   cloudOrigin: string;
 }
 
 export const Config: z<Config> = z.object({
   autoInstall: z.string().default("prompt") as unknown as z<Config["autoInstall"]>,
-  installDaemon: z.boolean().default(true),
-  cloudOrigin: z.string().default("https://openllm.sh"),
+  cloudOrigin: z.string().default("https://www.openllm.sh"),
 });
 
 const CLI = "openllm";
 const DAEMON = "openllmd";
-const KEY_ENV = "OPENLLM_API_KEY";
 const ORIGIN_ENV = "OPENLLM_CLOUD_ORIGIN";
-const BASE_ENV = "OPENLLM_API_BASE";
-const CLI_ONLY_INSTALL =
-  "https://raw.githubusercontent.com/openllmsh/cli/main/install.sh";
 
-/** The shared env file the OpenLLM installer/daemon write (`~/.openllm/.env`). */
-const sharedEnvFile = (): string => {
-  const home = process.env.HOME && process.env.HOME.length > 0 ? process.env.HOME : homedir();
-  return join(home, ".openllm", ".env");
-};
-
-/**
- * Parse a `KEY=VALUE` env file (comments + blank lines ignored, surrounding
- * quotes stripped) — mirrors the OpenLLM CLI's own reader so both agree on the
- * shared file's shape.
- */
-const parseEnvFile = (path: string): Record<string, string> => {
-  const out: Record<string, string> = {};
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    return out; // missing / unreadable → env-only resolution
-  }
-  for (const line of text.split("\n")) {
-    const t = line.trim();
-    if (t.length === 0 || t.startsWith("#")) continue;
-    const eq = t.indexOf("=");
-    if (eq <= 0) continue;
-    out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
-  }
-  return out;
-};
-
-/**
- * Hydrate `process.env` from `~/.openllm/.env` for any OpenLLM keys not already
- * set, matching the CLI's precedence (process env wins, the file fills gaps).
- * This is why the LLM router works when the installer wrote the key only to the
- * file: dsh's pi-ai adapter resolves `apiKeyEnv: OPENLLM_API_KEY` from the
- * environment (lazily, at request time), so the hydrated value reaches it, and
- * `OPENLLM_API_BASE` (derived from `OPENLLM_CLOUD_ORIGIN`) reaches the router's
- * `baseURL`. Returns whether a usable key is now present.
- */
-function hydrateSharedEnv(): boolean {
-  const file = parseEnvFile(sharedEnvFile());
-  if (!process.env[KEY_ENV] && file[KEY_ENV]) process.env[KEY_ENV] = file[KEY_ENV];
-  // The router reads OPENLLM_API_BASE; the shared file stores the origin as
-  // OPENLLM_CLOUD_ORIGIN. Seed API_BASE from either when it isn't already set.
-  if (!process.env[BASE_ENV]) {
-    const origin = process.env[ORIGIN_ENV] ?? file[BASE_ENV] ?? file[ORIGIN_ENV];
-    if (origin) process.env[BASE_ENV] = origin.replace(/\/+$/, "");
-  }
-  return Boolean(process.env[KEY_ENV]);
+interface BinaryState {
+  cliPresent: boolean;
+  daemonPresent: boolean;
 }
 
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const log = ctx.logger(name);
 
-  // Read the shared ~/.openllm/.env into the environment first, so both the
-  // detection below and dsh's pi-ai router see a key/origin written only there.
-  const keyPresent = hydrateSharedEnv();
-
-  // Cheap probes only — never await the installer here.
+  // Cheap probes only — never await the installer here. The daemon is required
+  // (it serves dsh's local gateway), so both binaries are always probed.
   const [cliPresent, daemonPresent] = await Promise.all([
     probe(ctx, CLI),
-    config.installDaemon ? probe(ctx, DAEMON) : Promise.resolve(true),
+    probe(ctx, DAEMON),
   ]);
 
-  if (cliPresent && daemonPresent && keyPresent) return; // fully set up — stay silent.
+  if (cliPresent && daemonPresent) return; // both present — stay silent.
+
+  const state: BinaryState = { cliPresent, daemonPresent };
 
   // Register `/openllm-setup` when the commands service is available (Web).
   const commands = ctx.get("commands");
   if (commands) {
     const dispose = commands.register({
       name: "openllm-setup",
-      description:
-        "Install or configure the OpenLLM CLI + daemon for this harness",
+      description: "Install the OpenLLM CLI + daemon for this harness",
       handler: async () => ({
         kind: "success",
-        text: await runSetup(ctx, config, { cliPresent, daemonPresent, keyPresent }),
+        text: await runSetup(ctx, config, state),
       }),
     });
     ctx.effect(() => dispose);
   }
 
   // Print guidance now — works in every surface, including headless / ACP.
-  log.warn(
-    guidanceText(config, { cliPresent, daemonPresent, keyPresent, hasCommand: Boolean(commands) }),
-  );
+  log.warn(guidanceText(config, { ...state, hasCommand: Boolean(commands) }));
 }
 
 /** True when `command` resolves on PATH. */
@@ -158,31 +104,29 @@ async function probe(ctx: Context, command: string): Promise<boolean> {
   }
 }
 
-/** Run (or, for `autoInstall: never`, describe) the setup. Returns UI text. */
+/**
+ * Run (or, for `autoInstall: never`, describe) the binary install. Returns UI
+ * text. Credential setup is deferred to OpenLLM's native `openllm start`.
+ */
 async function runSetup(
   ctx: Context,
   config: Config,
-  state: { cliPresent: boolean; daemonPresent: boolean; keyPresent: boolean },
+  state: BinaryState,
 ): Promise<string> {
   const log = ctx.logger(name);
-  const needsBinaries = !state.cliPresent || (config.installDaemon && !state.daemonPresent);
+  const needsBinaries = !state.cliPresent || !state.daemonPresent;
 
   if (config.autoInstall === "never" || !needsBinaries) {
     return guidanceText(config, { ...state, hasCommand: true });
   }
 
-  const command = config.installDaemon
-    ? `curl -fsSL ${config.cloudOrigin}/install | bash`
-    : `curl -fsSL ${CLI_ONLY_INSTALL} | bash`;
-
+  const command = `curl -fsSL ${config.cloudOrigin}/install | bash`;
   log.info(`running OpenLLM installer: ${command}`);
 
   // `bash -lc` because the one-liner is a pipeline; argv is NOT shell-interpreted
-  // by the subprocess seam, so we invoke bash explicitly. Pass the key + origin
-  // in `env` — the scrubbed parent env drops OPENLLM_API_KEY (matches *KEY*).
-  const env: NodeJS.ProcessEnv = { OPENLLM_CLOUD_ORIGIN: config.cloudOrigin };
-  if (process.env[KEY_ENV]) env[KEY_ENV] = process.env[KEY_ENV];
-
+  // by the subprocess seam, so we invoke bash explicitly. A keyless install now
+  // succeeds — pass only the origin (never a secret), so the installer records
+  // the matching `OPENLLM_CLOUD_ORIGIN` for the daemon.
   const handle = ctx.subprocess.spawn({
     argv: ["bash", "-lc", command],
     cwd: process.cwd(),
@@ -192,7 +136,7 @@ async function runSetup(
       stderr: { maxBytes: 1_000_000 },
     },
     graceMs: 180_000,
-    env,
+    env: { [ORIGIN_ENV]: config.cloudOrigin },
   });
 
   const outcome = await handle.done;
@@ -206,50 +150,46 @@ async function runSetup(
   }
 
   return [
-    "OpenLLM CLI" + (config.installDaemon ? " + daemon" : "") + " installed.",
-    "Open a new shell (or `source` your rc) so `openllm` is on PATH, then restart",
-    "this dsh profile so the OpenLLM MCP server activates.",
+    "OpenLLM CLI + daemon installed.",
+    "Open a new shell (or `source` your rc) so `openllm` is on PATH.",
     "",
-    ...(process.env[KEY_ENV] ? [] : keyGuidance(config)),
+    ...nextStep(),
   ].join("\n");
 }
 
-/** The full guidance block, tailored to what's missing. */
+/** The install guidance block, tailored to what's missing. */
 function guidanceText(
   config: Config,
-  state: { cliPresent: boolean; daemonPresent: boolean; keyPresent: boolean; hasCommand: boolean },
+  state: BinaryState & { hasCommand: boolean },
 ): string {
   const lines: string[] = ["OpenLLM setup for DeepSeek Harness:"];
 
-  if (!state.cliPresent || (config.installDaemon && !state.daemonPresent)) {
+  if (!state.cliPresent || !state.daemonPresent) {
     lines.push(
       "",
-      "1. Install the OpenLLM CLI" + (config.installDaemon ? " + daemon" : "") + ":",
-      config.installDaemon
-        ? `     curl -fsSL ${config.cloudOrigin}/install | bash`
-        : `     curl -fsSL ${CLI_ONLY_INSTALL} | bash`,
+      "1. Install the OpenLLM CLI + daemon:",
+      `     curl -fsSL ${config.cloudOrigin}/install | bash`,
       config.autoInstall === "prompt" && state.hasCommand
         ? "   …or run /openllm-setup in a session to do this for you."
         : "",
     );
   }
 
-  if (!state.keyPresent) lines.push("", ...keyGuidance(config));
-
-  lines.push(
-    "",
-    "Verify:  openllmd status  •  openllm doctor  •  openllm --version",
-  );
+  lines.push("", ...nextStep(), "", "Verify:  openllm doctor  •  openllm --version");
   return lines.filter((l) => l !== undefined).join("\n");
 }
 
-function keyGuidance(config: Config): string[] {
-  const n = config.installDaemon ? "2" : "1";
+/**
+ * The credential step — entirely OpenLLM's own. `openllm start` guides sign-in +
+ * key acquisition and starts the daemon that serves dsh's local gateway. dsh
+ * itself needs no key or origin, so there is nothing to paste or export here.
+ */
+function nextStep(): string[] {
   return [
-    `${n}. Mint an API key in the browser — there is no \`openllm login\`:`,
-    `     ${config.cloudOrigin}/keys   (sign up, unlock the vault, create a key)`,
-    `   Then either re-run the installer with the key so ~/.openllm/.env is`,
-    `   written, or export it for this shell:`,
-    `     export ${KEY_ENV}=sk-llm-…`,
+    "2. Start OpenLLM and finish sign-in + key setup (the daemon serves dsh):",
+    "     openllm start",
+    "",
+    "dsh routes through the local daemon gateway (127.0.0.1:8787) — no key or",
+    "origin is configured in dsh; the daemon uses ~/.openllm/.env. Keep it running.",
   ];
 }

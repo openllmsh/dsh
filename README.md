@@ -22,13 +22,19 @@ hands it OpenLLM's MCP tools — then makes first-run setup self-service. It is 
 own client setup.
 
 - **LLM router** — adds an `openllm` provider to dsh's in-box `llm-pi-ai`
-  adapter (`openai-completions` → OpenLLM `/v1/chat/completions`) and points the
-  default model at it. No adapter code — pure config.
+  adapter (`openai-completions`) pointed at the daemon's **local-first gateway**
+  (`http://127.0.0.1:8787/v1`) and makes it the default model. No adapter code —
+  pure config, and **no API key**: that loopback surface has no auth gate; the
+  daemon fetches signed plans with its own `~/.openllm/.env` credentials and
+  forwards upstream.
 - **MCP** — registers the `openllm mcp` stdio server (`openllm`,
-  `claude-context`, `supermemory` tool groups).
-- **Onboarding** — on launch, if the `openllm` CLI/daemon or an API key is
-  missing, it registers an `/openllm-setup` command and prints guidance; running
-  it installs the CLI (+ daemon) with your consent.
+  `claude-context`, `supermemory` tool groups). The `openllm` binary resolves
+  `~/.openllm/.env` itself, so it too needs nothing from dsh.
+- **Install bridge** — on launch, if `openllm` or `openllmd` is missing, it
+  registers an `/openllm-setup` command and prints a short install hint; running
+  it installs both with your consent. That is all it does — it handles no
+  credentials (no key, no origin, no `~/.openllm/.env` parsing). Sign-in + key
+  setup is OpenLLM's own, via `openllm start`.
 
 Runs on the host DeepSeek Harness — the services it patches
 (`@deepseek-ai/dsh-llm-pi-ai`, `@deepseek-ai/dsh-mcp-client`) ship in
@@ -44,26 +50,27 @@ Distributed from GitHub — no npm package. The built `lib/` is committed, so th
 git install loads with no build step (and no pnpm `allowBuilds` prompt). Pin a
 release with `github:openllmsh/dsh#<tag>`.
 
-Restart the profile. If OpenLLM isn't set up yet, follow the printed guidance
-(or run `/openllm-setup` in a session):
+Restart the profile. If `openllm`/`openllmd` isn't installed yet, follow the
+printed hint (or run `/openllm-setup` in a session):
 
 ```sh
-# 1. Install the OpenLLM CLI + daemon (macOS / Linux)
-curl -fsSL https://openllm.sh/install | bash
+# 1. Install the OpenLLM CLI + daemon (macOS / Linux). A keyless install
+#    succeeds — it never starts an unpaired daemon.
+curl -fsSL https://www.openllm.sh/install | bash
 
-# 2. Mint an API key in the browser — there is no `openllm login`:
-#    https://openllm.sh/keys  (sign up, unlock the vault, create a key)
-export OPENLLM_API_KEY=sk-llm-…
-#    …or pass it to the installer so ~/.openllm/.env is written:
-#    curl -fsSL https://openllm.sh/install | OPENLLM_API_KEY='sk-llm-…' bash
+# 2. Sign in, get a key, and start the daemon that serves dsh:
+openllm start
+#    (interactive: prints the sign-in URL, then reads + persists your key)
 
 # 3. Verify
-openllmd status && openllm doctor && openllm --version
+openllm doctor && openllm --version
 ```
 
-The daemon is only needed for OpenLLM's subscription providers or the local
-`127.0.0.1:8787` gateway; plain cloud BYOK + MCP need just the CLI binary and a
-key (`installDaemon: false`).
+dsh holds **no key and no origin**. Its LLM traffic goes to the daemon's
+local-first gateway (`127.0.0.1:8787`), which the daemon serves from its own
+`~/.openllm/.env`; the MCP subprocess resolves that file itself. So the only
+requirement dsh adds is that **`openllmd` is running** — which `openllm start`
+takes care of. There is nothing to paste or export into your shell.
 
 ## Configuration
 
@@ -72,15 +79,13 @@ Set on the `openllm-onboarding` row in `cordis.patch.yml`:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `autoInstall` | `prompt` | `prompt` = `/openllm-setup` runs the installer; `never` = guidance only |
-| `installDaemon` | `true` | also install / expect `openllmd` |
-| `cloudOrigin` | `https://openllm.sh` | gateway origin (self-hosted / preview) |
+| `cloudOrigin` | `https://www.openllm.sh` | origin the **installer** fetches OpenLLM from (self-hosted / preview) — it does not affect routing |
 
-Point the router at a self-hosted gateway with `OPENLLM_API_BASE`
-(e.g. `http://127.0.0.1:8787`). The key comes from `OPENLLM_API_KEY` and is never
-written into YAML. At launch the plugin also reads the shared `~/.openllm/.env`
-(written by the OpenLLM installer/daemon) and hydrates `process.env` for any
-`OPENLLM_*` value not already set — so a key/origin that lives only in that file
-reaches both the setup check and the router (process env still wins).
+The router base (`http://127.0.0.1:8787/v1`) is fixed in `cordis.patch.yml`; it
+carries no `apiKeyEnv` because the loopback gateway ignores auth. To route
+through a self-hosted OpenLLM, point that daemon at your origin at install time
+(`cloudOrigin`) — dsh still just talks to `127.0.0.1:8787`. A custom daemon port
+(`OPENLLM_DAEMON_PORT`) means editing the `baseURL` to match.
 
 ## Develop
 
