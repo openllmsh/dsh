@@ -25,7 +25,9 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "pretest": "tsdown",
-    "test": "node --test \"test/**/*.test.mjs\""
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "test:integration": "tsdown && node test/integration/harness.mjs",
+    "test:docker": "bash scripts/docker-test.sh"
   },
   "dsh": {
     "bundle": {

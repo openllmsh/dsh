@@ -101,6 +101,29 @@ dsh plugin --profile demo add .          # link this bundle into a scratch profi
 dsh --profile demo --dump-config         # inspect the composed plugin tree
 ```
 
+### Test
+
+```sh
+pnpm test               # unit suite (fake ctx) — fast, no cordis
+pnpm test:integration   # real @deepseek-ai/cordis logger + real $PATH probe (host)
+pnpm test:docker        # the same, inside a throwaway container (openllm absent)
+```
+
+`pnpm test:docker` does **not** build an image. It builds `lib/` on the host,
+then mounts the repo into an existing image and runs `node` there — a clean box
+where `openllm` isn't installed, i.e. the real missing-binary scenario — so you
+can see what dsh actually shows **without pushing to GitHub to test it**. Default
+image is `node:22-slim` (instant); point it at your own with
+`DSH_TEST_IMAGE=ubuntu:24.04 pnpm test:docker` (a nodeless image installs node
+once for that run).
+
+The integration harness (`test/integration/harness.mjs`) loads the built plugin
+into a real cordis Context with a real print exporter — which is what catches
+log-**visibility** bugs the fake-logger unit tests can't: cordis inverts verbosity
+(`ERROR=0, INFO=1, WARN=2, DEBUG=3`) and hides `warn` at the default level, so
+guidance must be emitted at `info`/`error`. It also self-checks that a `warn` is
+hidden while an `info` shows, so the harness can't silently stop reproducing dsh.
+
 > `lib/` is committed (GitHub is the only distribution channel), so **rebuild and
 > commit it whenever `src/` changes** — a stale `lib/` is what git installs.
 
