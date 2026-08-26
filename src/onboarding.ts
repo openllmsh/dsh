@@ -50,9 +50,12 @@ export interface Config {
   cloudOrigin: string;
 }
 
+/** Compiled fallback origin, also the safe default when a config value is rejected. */
+const DEFAULT_ORIGIN = "https://www.openllm.sh";
+
 export const Config: z<Config> = z.object({
   autoInstall: z.string().default("prompt") as unknown as z<Config["autoInstall"]>,
-  cloudOrigin: z.string().default("https://www.openllm.sh"),
+  cloudOrigin: z.string().default(DEFAULT_ORIGIN),
 });
 
 const CLI = "openllm";
@@ -64,8 +67,43 @@ interface BinaryState {
   daemonPresent: boolean;
 }
 
+/**
+ * Validate + normalize an installer origin before it is ever interpolated into
+ * the `curl … | bash` command. Mirrors OpenLLM's own update-origin rules
+ * (`docs/proposals/native-api-key-onboarding.md` §13.2): allow HTTPS, or HTTP
+ * only for a loopback host; reject embedded credentials, query, fragment, any
+ * path, and anything `URL` cannot parse (which excludes CR/LF and shell
+ * metacharacters). A rejected value falls back to the compiled default rather
+ * than executing an attacker-influenced string. Returns a bare scheme://host[:port].
+ */
+function safeOrigin(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return DEFAULT_ORIGIN;
+  }
+  const loopback =
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "::1" ||
+    url.hostname === "[::1]";
+  const allowed =
+    (url.protocol === "https:" || (url.protocol === "http:" && loopback)) &&
+    url.username === "" &&
+    url.password === "" &&
+    url.search === "" &&
+    url.hash === "" &&
+    (url.pathname === "" || url.pathname === "/");
+  return allowed ? url.origin : DEFAULT_ORIGIN;
+}
+
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const log = ctx.logger(name);
+
+  // Validate + normalize the installer origin ONCE, before it can reach any
+  // shell command, and thread the safe value through everything below.
+  const safe: Config = { ...config, cloudOrigin: safeOrigin(config.cloudOrigin) };
 
   // Cheap probes only — never await the installer here. The daemon is required
   // (it serves dsh's local gateway), so both binaries are always probed.
@@ -86,7 +124,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       description: "Install the OpenLLM CLI + daemon for this harness",
       handler: async () => ({
         kind: "success",
-        text: await runSetup(ctx, config, state),
+        text: await runSetup(ctx, safe, state),
       }),
     });
     ctx.effect(() => dispose);
@@ -96,16 +134,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // NOTE: cordis inverts log verbosity (ERROR=0, INFO=1, WARN=2, DEBUG=3) and
   // the default visible level is 1, so `warn`/`debug` are hidden by default.
   // Human-facing guidance MUST go through `info` (or `error`) to be seen.
-  log.info(guidanceText(config, { ...state, hasCommand: Boolean(commands) }));
+  log.info(guidanceText(safe, { ...state, hasCommand: Boolean(commands) }));
 
   // In an interactive UI, additionally offer a real "Install now?" prompt. Fire
   // it WITHOUT awaiting: the human may take a while, and Loader settlement waits
   // on apply()'s returned promise, so awaiting would hang harness startup.
-  // Headless / ACP have no questions provider, so this no-ops there — the warn +
-  // command above remain the surface.
-  if (config.autoInstall === "prompt") {
-    void promptInstall(ctx, config, state).catch(() => {
-      // No provider, aborted, or declined — the warn + /openllm-setup stand.
+  // Headless / ACP have no questions provider, so this no-ops there — the info
+  // guidance + command above remain the surface.
+  if (safe.autoInstall === "prompt") {
+    void promptInstall(ctx, safe, state).catch(() => {
+      // No provider, aborted, or declined — the guidance + /openllm-setup stand.
     });
   }
 }

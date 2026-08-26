@@ -222,6 +222,60 @@ describe("/openllm-setup — install bridge", () => {
   });
 });
 
+describe("cloudOrigin validation (shell-injection defense)", () => {
+  // The origin is interpolated into `curl … | bash`, so it must be validated
+  // before it can ever reach a shell command.
+  const rejected = [
+    ["a shell-metacharacter payload", "https://evil.example/install | bash #"],
+    ["command substitution", "https://evil.example/$(rm -rf ~)"],
+    ["a non-loopback http origin", "http://evil.example"],
+    ["embedded credentials", "https://user:pass@evil.example"],
+    ["a CRLF/newline injection", "https://evil.example\nrm -rf ~"],
+    ["a bare non-URL string", "not a url"],
+    ["an origin carrying a path", "https://evil.example/sneaky/path"],
+  ];
+
+  for (const [label, value] of rejected) {
+    test(`rejects ${label} → falls back to the default origin`, async () => {
+      const { ctx, calls } = makeCtx({ present: [] });
+      await apply(ctx, config({ cloudOrigin: value }));
+      await invokeSetup(calls);
+      const spec = calls.spawns[0];
+      // The malicious value never reaches the spawned command or its env.
+      assert.deepEqual(spec.argv, [
+        "bash",
+        "-lc",
+        "curl -fsSL https://www.openllm.sh/install | bash",
+      ]);
+      assert.equal(spec.env.OPENLLM_CLOUD_ORIGIN, "https://www.openllm.sh");
+      assert.ok(!JSON.stringify(spec).includes("evil"), "attacker origin must not survive");
+      assert.doesNotMatch(calls.info[0], /evil/);
+    });
+  }
+
+  test("accepts https and normalizes a trailing slash", async () => {
+    const { ctx, calls } = makeCtx({ present: [] });
+    await apply(ctx, config({ cloudOrigin: "https://dev.openllm.sh/" }));
+    await invokeSetup(calls);
+    assert.deepEqual(calls.spawns[0].argv, [
+      "bash",
+      "-lc",
+      "curl -fsSL https://dev.openllm.sh/install | bash",
+    ]);
+  });
+
+  test("accepts http ONLY for a loopback host (self-hosted)", async () => {
+    const { ctx, calls } = makeCtx({ present: [] });
+    await apply(ctx, config({ cloudOrigin: "http://127.0.0.1:8787" }));
+    await invokeSetup(calls);
+    assert.deepEqual(calls.spawns[0].argv, [
+      "bash",
+      "-lc",
+      "curl -fsSL http://127.0.0.1:8787/install | bash",
+    ]);
+  });
+});
+
 describe("interactive install prompt (userQuestions)", () => {
   test("prompts and installs when the user chooses Install", async () => {
     const { ctx, calls } = makeCtx({ present: [], answer: ["Install"] });
