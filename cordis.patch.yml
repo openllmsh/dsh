@@ -4,15 +4,14 @@
 # `llm-pi-ai` (dormant), `llm-deepseek`, and `agent-default-model`. This patch:
 #   1. teaches the in-box pi-ai adapter an `openllm` OpenAI-compatible provider,
 #   2. points the default conversation model at it,
-#   3. registers the OpenLLM MCP server over stdio,
-#   4. mounts this bundle's install-bridge plugin (installs the OpenLLM CLI;
-#      credential onboarding is OpenLLM's own — `openllm start`).
+#   3. registers the OpenLLM MCP server over stdio.
 #
-# No secrets, and none needed. dsh reaches OpenLLM through the daemon's
-# local-first gateway on 127.0.0.1:8787 — a loopback surface with no auth gate:
-# the daemon fetches signed plans with its OWN ~/.openllm/.env credentials and
-# forwards upstream. So dsh holds no API key and no origin; `openllmd` just has
-# to be running (the install bridge below sets it up via `openllm start`).
+# Install OpenLLM first (README prerequisite) — this bundle does NOT install,
+# prompt for, or onboard it. No secrets, and none needed: dsh reaches OpenLLM
+# through the daemon's local-first gateway on 127.0.0.1:8787, a loopback surface
+# with no auth gate (the daemon fetches signed plans with its OWN ~/.openllm/.env
+# credentials and forwards upstream). So dsh holds no API key and no origin;
+# `openllmd` just has to be running (`openllm start`).
 
 # 1 + 2 — Router: OpenLLM provider on pi-ai, and the default model.
 - id: llm-pi-ai
@@ -33,7 +32,7 @@
     provider: openllm
     model: ultra
 
-# 3 + 4 — MCP server (stdio) + onboarding.
+# 3 — MCP server (stdio). `command: openllm` resolves ~/.openllm/.env itself.
 - insert:
     - id: mcp-openllm
       name: '@deepseek-ai/dsh-mcp-client'
@@ -43,9 +42,3 @@
         command: openllm
         args: ['mcp']
         env: {}
-
-    - id: openllm-onboarding
-      name: '@openllmsh/dsh'
-      config:
-        autoInstall: prompt      # prompt | never — never fully silent; consent required
-        cloudOrigin: https://www.openllm.sh   # where the installer fetches openllm from

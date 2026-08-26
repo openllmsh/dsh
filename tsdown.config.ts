@@ -1,9 +1,10 @@
 import { defineConfig } from "tsdown";
 
-// Builds the single host plugin entry to `lib/onboarding.js` (+ .d.ts), matching
-// package.json `main`/`types`. The `cordis.patch.yml` ships as-is (not bundled).
+// Builds the bundle's placeholder entry to `lib/index.mjs` (+ .d.mts), matching
+// package.json `main`/`types`. The substance is `cordis.patch.yml`, which ships
+// as-is (not bundled); this module carries no runtime API.
 export default defineConfig({
-  entry: ["src/onboarding.ts"],
+  entry: ["src/index.ts"],
   format: ["esm"],
   dts: true,
   outDir: "lib",

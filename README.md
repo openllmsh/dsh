@@ -10,119 +10,88 @@
 <p align="center">
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="dsh-plugin" src="https://img.shields.io/badge/dsh-plugin-informational.svg">
-  <img alt="targets" src="https://img.shields.io/badge/onboarding-darwin%20%C2%B7%20linux-lightgrey.svg">
+  <img alt="platforms" src="https://img.shields.io/badge/platforms-darwin%20%C2%B7%20linux-lightgrey.svg">
 </p>
 
 ---
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`)
 bundle that points the harness at the [OpenLLM](https://openllm.sh) gateway and
-hands it OpenLLM's MCP tools — then makes first-run setup self-service. It is a
-**Cordis patch layer**, installed from the dsh side; it is not part of OpenLLM's
-own client setup.
+hands it OpenLLM's MCP tools. It is a **pure-config Cordis patch layer** —
+installed from the dsh side, no runtime code — and it does two things:
 
 - **LLM router** — adds an `openllm` provider to dsh's in-box `llm-pi-ai`
   adapter (`openai-completions`) pointed at the daemon's **local-first gateway**
-  (`http://127.0.0.1:8787/v1`) and makes it the default model. No adapter code —
-  pure config, and **no API key**: that loopback surface has no auth gate; the
-  daemon fetches signed plans with its own `~/.openllm/.env` credentials and
-  forwards upstream.
+  (`http://127.0.0.1:8787/v1`) and makes it the default model. No adapter code,
+  and **no API key**: that loopback surface has no auth gate; the daemon fetches
+  signed plans with its own `~/.openllm/.env` credentials and forwards upstream.
 - **MCP** — registers the `openllm mcp` stdio server (`openllm`,
   `claude-context`, `supermemory` tool groups). The `openllm` binary resolves
   `~/.openllm/.env` itself, so it too needs nothing from dsh.
-- **Install bridge** — when the profile **loads**, if `openllm` or `openllmd` is
-  missing, it prints guidance, registers an `/openllm-setup` command, and — in an
-  interactive UI — pops an "Install now?" prompt; any of them installs both with
-  your consent. That is all it does — it handles no credentials (no key, no
-  origin, no `~/.openllm/.env` parsing). Sign-in + key setup is OpenLLM's own, via
-  `openllm start`. Note: `dsh plugin add` only *installs* this bundle — the check
-  runs when you next **start/restart the profile**.
 
-Runs on the host DeepSeek Harness — the services it patches
+dsh holds **no key and no origin** — it just talks to `127.0.0.1:8787`, so the
+only thing it requires is that **`openllmd` is running**. Installing and starting
+OpenLLM is a prerequisite (below); this bundle does not install, prompt for, or
+onboard it. Runs on the host DeepSeek Harness — the services it patches
 (`@deepseek-ai/dsh-llm-pi-ai`, `@deepseek-ai/dsh-mcp-client`) ship in
 `@deepseek-ai/dsh-base`.
 
-## Install
+## Prerequisite — install OpenLLM
+
+Do this **once, before (or after) adding the bundle**. dsh routes to the local
+OpenLLM daemon, so it must be installed and running:
 
 ```sh
-dsh plugin --profile default add github:openllmsh/dsh
-```
-
-Distributed from GitHub — no npm package. The built `lib/` is committed, so the
-git install loads with no build step (and no pnpm `allowBuilds` prompt). Pin a
-release with `github:openllmsh/dsh#<tag>`.
-
-**Restart the profile** (this is when the check runs — `add` alone won't trigger
-it). If `openllm`/`openllmd` isn't installed yet, take the "Install now?" prompt,
-run `/openllm-setup`, or follow the printed hint:
-
-```sh
-# 1. Install the OpenLLM CLI + daemon (macOS / Linux). A keyless install
-#    succeeds — it never starts an unpaired daemon.
+# 1. Install the OpenLLM CLI + daemon (macOS / Linux).
 curl -fsSL https://www.openllm.sh/install | bash
 
-# 2. Sign in, get a key, and start the daemon that serves dsh:
+# 2. Sign in, get a key, and start the daemon that serves dsh
+#    (interactive: prints the sign-in URL, then reads + persists your key):
 openllm start
-#    (interactive: prints the sign-in URL, then reads + persists your key)
 
 # 3. Verify
 openllm doctor && openllm --version
 ```
 
-dsh holds **no key and no origin**. Its LLM traffic goes to the daemon's
-local-first gateway (`127.0.0.1:8787`), which the daemon serves from its own
-`~/.openllm/.env`; the MCP subprocess resolves that file itself. So the only
-requirement dsh adds is that **`openllmd` is running** — which `openllm start`
-takes care of. There is nothing to paste or export into your shell.
+> The `install | bash` line is **OpenLLM's own official installer** (canonical
+> source: <https://openllm.sh/install>); it digest-verifies the binaries it
+> downloads. If your policy requires it, fetch and read the script before piping
+> it to a shell. This bundle only documents the prerequisite — it never runs it.
 
-## Configuration
+There is nothing to paste or export into your shell — `openllm start` persists
+the key to `~/.openllm/.env`, and the daemon serves dsh from there.
 
-Set on the `openllm-onboarding` row in `cordis.patch.yml`:
+## Install the bundle
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `autoInstall` | `prompt` | `prompt` = `/openllm-setup` runs the installer; `never` = guidance only |
-| `cloudOrigin` | `https://www.openllm.sh` | origin the **installer** fetches OpenLLM from (self-hosted / preview) — it does not affect routing |
+```sh
+dsh plugin --profile default add github:openllmsh/dsh
+```
 
-The router base (`http://127.0.0.1:8787/v1`) is fixed in `cordis.patch.yml`; it
-carries no `apiKeyEnv` because the loopback gateway ignores auth. To route
-through a self-hosted OpenLLM, point that daemon at your origin at install time
-(`cloudOrigin`) — dsh still just talks to `127.0.0.1:8787`. A custom daemon port
-(`OPENLLM_DAEMON_PORT`) means editing the `baseURL` to match.
+Then **restart the profile**. Distributed from GitHub — no npm package. The built
+`lib/` is committed, so the git install loads with no build step (and no pnpm
+`allowBuilds` prompt). Pin a release with `github:openllmsh/dsh#<tag>`.
+
+## Self-hosted / custom port
+
+The router base (`http://127.0.0.1:8787/v1`) is fixed in `cordis.patch.yml`. To
+route through a self-hosted OpenLLM, point the **daemon** at your origin when you
+install it — dsh still just talks to `127.0.0.1:8787`. A custom daemon port
+(`OPENLLM_DAEMON_PORT`) means editing the `baseURL` in `cordis.patch.yml` to match.
 
 ## Develop
 
 ```sh
 pnpm install
-pnpm build            # tsdown → lib/onboarding.mjs (+ .d.mts) — commit the result
+pnpm build            # tsdown → lib/index.mjs (+ .d.mts) — commit the result
 pnpm typecheck        # tsc --noEmit
 
 dsh plugin --profile demo add .          # link this bundle into a scratch profile
 dsh --profile demo --dump-config         # inspect the composed plugin tree
 ```
 
-### Test
-
-```sh
-pnpm test               # unit suite (fake ctx) — fast, no cordis
-pnpm test:integration   # real @deepseek-ai/cordis logger + real $PATH probe (host)
-pnpm test:docker        # the same, inside a throwaway container (openllm absent)
-```
-
-`pnpm test:docker` does **not** build an image. It builds `lib/` on the host,
-then mounts the repo into an existing image and runs `node` there — a clean box
-where `openllm` isn't installed, i.e. the real missing-binary scenario — so you
-can see what dsh actually shows **without pushing to GitHub to test it**. Default
-image is `node:22-slim` (instant); point it at your own with
-`DSH_TEST_IMAGE=ubuntu:24.04 pnpm test:docker` (a nodeless image installs node
-once for that run).
-
-The integration harness (`test/integration/harness.mjs`) loads the built plugin
-into a real cordis Context with a real print exporter — which is what catches
-log-**visibility** bugs the fake-logger unit tests can't: cordis inverts verbosity
-(`ERROR=0, INFO=1, WARN=2, DEBUG=3`) and hides `warn` at the default level, so
-guidance must be emitted at `info`/`error`. It also self-checks that a `warn` is
-hidden while an `info` shows, so the harness can't silently stop reproducing dsh.
+The bundle's substance is `cordis.patch.yml` (resolved via the `dsh.bundle.patch`
+manifest field); `src/index.ts` is an `export {}` placeholder with no runtime API,
+matching `@deepseek-ai/dsh-base`.
 
 > `lib/` is committed (GitHub is the only distribution channel), so **rebuild and
 > commit it whenever `src/` changes** — a stale `lib/` is what git installs.
