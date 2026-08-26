@@ -22,6 +22,13 @@
         api: openai-completions
         # Local daemon gateway — no apiKeyEnv (the loopback surface ignores auth).
         baseURL: http://127.0.0.1:8787/v1
+        # pi-ai's openai-completions client still refuses to send a request with
+        # neither an apiKey nor an Authorization header ("No API key for provider").
+        # The loopback gateway ignores the value, so a dummy bearer satisfies the
+        # client-side guard without dsh holding a real key. `Authorization` is not
+        # a reserved attribution header, so this passes straight through.
+        headers:
+          Authorization: Bearer local
         models:
           - { id: ultra, name: "ultra (OpenLLM)", contextWindow: 262144, maxTokens: 16384 }
           - { id: plus,  name: "plus (OpenLLM)",  contextWindow: 262144, maxTokens: 16384 }

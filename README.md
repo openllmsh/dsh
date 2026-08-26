@@ -56,8 +56,16 @@ and persists your key to `~/.openllm/.env`, and the daemon serves dsh from there
 
 ## Install the bundle
 
+Install into the profile whose surface you actually run. dsh profiles are
+separate bundle stacks, so a bundle added to one profile is invisible to the
+others — the **browser UI lives only in the `web` profile** (`web` mounts
+`dsh-base` + `dsh-web-app`; `headless` mounts `dsh-base` + `dsh-headless`).
+The bare `default` profile is `dsh-base` only — no web surface — so adding the
+bundle there never reaches the web UI.
+
 ```sh
-dsh plugin --profile default add github:openllmsh/dsh
+dsh plugin --profile web add github:openllmsh/dsh        # browser UI
+dsh plugin --profile headless add github:openllmsh/dsh   # headless / CLI
 ```
 
 Then **restart the profile**. Distributed from GitHub — no npm package. The built
