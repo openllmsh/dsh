@@ -32,14 +32,27 @@ function config(overrides = {}) {
  * `hasCommands` toggles the optional commands service (absent = headless/ACP);
  * `exitCode` is the stubbed installer result. Every seam records its calls.
  */
-function makeCtx({ present = [], hasCommands = true, exitCode = 0 } = {}) {
-  const calls = { warn: [], info: [], spawns: [], registered: [], effects: [], resolved: [] };
+function makeCtx({ present = [], hasCommands = true, exitCode = 0, answer = null } = {}) {
+  const calls = { warn: [], info: [], spawns: [], registered: [], effects: [], resolved: [], asked: [] };
   const commands = {
     register(def) {
       calls.registered.push(def);
       return () => calls.effects.push("disposed");
     },
   };
+  // `answer` (e.g. ["Install"]) enables the interactive user-questions provider;
+  // null models a headless surface with no provider.
+  const userQuestions =
+    answer === null
+      ? undefined
+      : {
+          ask(request) {
+            calls.asked.push(request);
+            return Promise.resolve({
+              answers: [{ id: request.questions[0].id, selected: answer }],
+            });
+          },
+        };
   const ctx = {
     logger() {
       return { warn: (m) => calls.warn.push(m), info: (m) => calls.info.push(m) };
@@ -56,14 +69,20 @@ function makeCtx({ present = [], hasCommands = true, exitCode = 0 } = {}) {
       },
     },
     get(service) {
-      return service === "commands" && hasCommands ? commands : undefined;
+      if (service === "commands") return hasCommands ? commands : undefined;
+      if (service === "userQuestions") return userQuestions;
+      return undefined;
     },
     effect(fn) {
       calls.effects.push(fn);
+      return () => {};
     },
   };
   return { ctx, calls };
 }
+
+/** Let the non-awaited install prompt settle (a macrotask flushes microtasks). */
+const flush = () => new Promise((r) => setTimeout(r, 5));
 
 /** Invoke the one registered command's handler and return its text. */
 async function invokeSetup(calls) {
@@ -195,5 +214,55 @@ describe("/openllm-setup — install bridge", () => {
     assert.match(text, /exited with code 1/);
     assert.match(text, /curl -fsSL https:\/\/www\.openllm\.sh\/install \| bash/);
     assert.ok(calls.warn.some((m) => /exited with code 1/.test(m)), "the exit code is logged");
+  });
+});
+
+describe("interactive install prompt (userQuestions)", () => {
+  test("prompts and installs when the user chooses Install", async () => {
+    const { ctx, calls } = makeCtx({ present: [], answer: ["Install"] });
+    await apply(ctx, config());
+    await flush();
+    assert.equal(calls.asked.length, 1, "the install prompt was shown");
+    assert.match(calls.asked[0].questions[0].question, /Install the CLI \+ daemon now\?/);
+    assert.equal(calls.spawns.length, 1, "Install runs the installer");
+    assert.deepEqual(calls.spawns[0].argv, [
+      "bash",
+      "-lc",
+      "curl -fsSL https://www.openllm.sh/install | bash",
+    ]);
+  });
+
+  test("prompts but does NOT install when the user declines", async () => {
+    const { ctx, calls } = makeCtx({ present: [], answer: ["Not now"] });
+    await apply(ctx, config());
+    await flush();
+    assert.equal(calls.asked.length, 1);
+    assert.equal(calls.spawns.length, 0, "declining installs nothing");
+  });
+
+  test("headless (no provider) never prompts, but still warns + registers the command", async () => {
+    const { ctx, calls } = makeCtx({ present: [], answer: null });
+    await apply(ctx, config());
+    await flush();
+    assert.equal(calls.asked.length, 0, "no prompt without a provider");
+    assert.equal(calls.spawns.length, 0);
+    assert.equal(calls.warn.length, 1);
+    assert.equal(calls.registered.length, 1);
+  });
+
+  test("autoInstall:never suppresses the prompt even when a provider exists", async () => {
+    const { ctx, calls } = makeCtx({ present: [], answer: ["Install"] });
+    await apply(ctx, config({ autoInstall: "never" }));
+    await flush();
+    assert.equal(calls.asked.length, 0, "never must not prompt");
+    assert.equal(calls.spawns.length, 0);
+  });
+
+  test("does not prompt when both binaries are already present", async () => {
+    const { ctx, calls } = makeCtx({ present: ["openllm", "openllmd"], answer: ["Install"] });
+    await apply(ctx, config());
+    await flush();
+    assert.equal(calls.asked.length, 0);
+    assert.equal(calls.spawns.length, 0);
   });
 });

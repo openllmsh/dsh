@@ -58,8 +58,40 @@ declare module "@deepseek-ai/cordis" {
     register(definition: CommandDefinition): () => void;
   }
 
+  interface UserQuestionOption {
+    label: string;
+    description?: string;
+  }
+
+  interface UserQuestionItem {
+    id: string;
+    question: string;
+    detail?: string;
+    header?: string;
+    options?: UserQuestionOption[];
+    multiSelect?: boolean;
+  }
+
+  interface UserQuestionAnswerItem {
+    id: string;
+    selected: string[];
+    custom?: string;
+  }
+
+  interface UserQuestionAnswer {
+    answers: UserQuestionAnswerItem[];
+  }
+
+  interface UserQuestionsService {
+    ask(request: {
+      questions: UserQuestionItem[];
+      signal?: AbortSignal;
+    }): Promise<UserQuestionAnswer>;
+  }
+
   interface Context {
     subprocess: SubprocessService;
     commands: CommandsService;
+    userQuestions: UserQuestionsService;
   }
 }

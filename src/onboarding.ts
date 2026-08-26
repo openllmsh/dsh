@@ -1,10 +1,12 @@
 /**
  * @openllmsh/dsh — install bridge.
  *
- * A DeepSeek Harness (Cordis) host plugin that, at launch, checks whether the
- * OpenLLM CLI (`openllm`) + daemon (`openllmd`) are present, and if not either
- * installs them (consent-gated, via the `/openllm-setup` slash command) or
- * prints a short install hint.
+ * A DeepSeek Harness (Cordis) host plugin that, when the profile LOADS (not at
+ * `dsh plugin add` time — that only installs the bundle), checks whether the
+ * OpenLLM CLI (`openllm`) + daemon (`openllmd`) are present. If either is
+ * missing it: logs guidance, registers an `/openllm-setup` command, and — in an
+ * interactive UI (a `userQuestions` provider is present) — pops a non-blocking
+ * "Install now?" prompt. All install paths are consent-gated.
  *
  * That is ALL it does. It handles no credentials — no key, no origin, no
  * `~/.openllm/.env` parsing. dsh reaches OpenLLM two ways, and neither needs
@@ -92,6 +94,56 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   // Print guidance now — works in every surface, including headless / ACP.
   log.warn(guidanceText(config, { ...state, hasCommand: Boolean(commands) }));
+
+  // In an interactive UI, additionally offer a real "Install now?" prompt. Fire
+  // it WITHOUT awaiting: the human may take a while, and Loader settlement waits
+  // on apply()'s returned promise, so awaiting would hang harness startup.
+  // Headless / ACP have no questions provider, so this no-ops there — the warn +
+  // command above remain the surface.
+  if (config.autoInstall === "prompt") {
+    void promptInstall(ctx, config, state).catch(() => {
+      // No provider, aborted, or declined — the warn + /openllm-setup stand.
+    });
+  }
+}
+
+/**
+ * Interactive install offer, used only when a `userQuestions` provider is
+ * present. Non-blocking by contract (never awaited by `apply`). On "Install" it
+ * runs the same installer as `/openllm-setup` and logs the result.
+ */
+async function promptInstall(
+  ctx: Context,
+  config: Config,
+  state: BinaryState,
+): Promise<void> {
+  const questions = ctx.get("userQuestions");
+  if (!questions) return; // headless / ACP — nothing to prompt on.
+
+  const controller = new AbortController();
+  const disposeAbort = ctx.effect(() => () => controller.abort());
+  try {
+    const answer = await questions.ask({
+      questions: [
+        {
+          id: "openllm-install",
+          header: "OpenLLM",
+          question: "OpenLLM isn't installed. Install the CLI + daemon now?",
+          detail: `Runs  curl -fsSL ${config.cloudOrigin}/install | bash`,
+          options: [
+            { label: "Install", description: "Download and run the OpenLLM installer" },
+            { label: "Not now", description: "Skip — run /openllm-setup later" },
+          ],
+        },
+      ],
+      signal: controller.signal,
+    });
+    const chosen = answer.answers.find((a) => a.id === "openllm-install")?.selected ?? [];
+    if (!chosen.includes("Install")) return; // declined.
+    ctx.logger(name).warn(await runSetup(ctx, config, state));
+  } finally {
+    disposeAbort();
+  }
 }
 
 /** True when `command` resolves on PATH. */

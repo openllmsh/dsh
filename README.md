@@ -30,11 +30,13 @@ own client setup.
 - **MCP** — registers the `openllm mcp` stdio server (`openllm`,
   `claude-context`, `supermemory` tool groups). The `openllm` binary resolves
   `~/.openllm/.env` itself, so it too needs nothing from dsh.
-- **Install bridge** — on launch, if `openllm` or `openllmd` is missing, it
-  registers an `/openllm-setup` command and prints a short install hint; running
-  it installs both with your consent. That is all it does — it handles no
-  credentials (no key, no origin, no `~/.openllm/.env` parsing). Sign-in + key
-  setup is OpenLLM's own, via `openllm start`.
+- **Install bridge** — when the profile **loads**, if `openllm` or `openllmd` is
+  missing, it prints guidance, registers an `/openllm-setup` command, and — in an
+  interactive UI — pops an "Install now?" prompt; any of them installs both with
+  your consent. That is all it does — it handles no credentials (no key, no
+  origin, no `~/.openllm/.env` parsing). Sign-in + key setup is OpenLLM's own, via
+  `openllm start`. Note: `dsh plugin add` only *installs* this bundle — the check
+  runs when you next **start/restart the profile**.
 
 Runs on the host DeepSeek Harness — the services it patches
 (`@deepseek-ai/dsh-llm-pi-ai`, `@deepseek-ai/dsh-mcp-client`) ship in
@@ -50,8 +52,9 @@ Distributed from GitHub — no npm package. The built `lib/` is committed, so th
 git install loads with no build step (and no pnpm `allowBuilds` prompt). Pin a
 release with `github:openllmsh/dsh#<tag>`.
 
-Restart the profile. If `openllm`/`openllmd` isn't installed yet, follow the
-printed hint (or run `/openllm-setup` in a session):
+**Restart the profile** (this is when the check runs — `add` alone won't trigger
+it). If `openllm`/`openllmd` isn't installed yet, take the "Install now?" prompt,
+run `/openllm-setup`, or follow the printed hint:
 
 ```sh
 # 1. Install the OpenLLM CLI + daemon (macOS / Linux). A keyless install
