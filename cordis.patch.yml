@@ -11,7 +11,7 @@
 # through the daemon's local-first gateway on 127.0.0.1:8787, a loopback surface
 # with no auth gate (the daemon fetches signed plans with its OWN ~/.openllm/.env
 # credentials and forwards upstream). So dsh holds no API key and no origin;
-# `openllmd` just has to be running (`openllm start`).
+# `openllmd` just has to be running (the installer starts it).
 
 # 1 + 2 — Router: OpenLLM provider on pi-ai, and the default model.
 - id: llm-pi-ai

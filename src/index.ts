@@ -9,9 +9,9 @@
  *      the daemon's local-first gateway (`127.0.0.1:8787`), and makes it default;
  *   2. registers the `openllm mcp` stdio server.
  *
- * Installing OpenLLM is a documented prerequisite (`curl … /install | bash`, then
- * `openllm start`) — this bundle deliberately does NOT install, prompt for, or
- * onboard OpenLLM. See the README.
+ * Installing OpenLLM is a documented prerequisite (`curl … /install | bash`, which
+ * starts the daemon itself) — this bundle deliberately does NOT install, prompt
+ * for, or onboard OpenLLM. See the README.
  *
  * @module @openllmsh/dsh
  */

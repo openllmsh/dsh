@@ -30,36 +30,29 @@ installed from the dsh side, no runtime code — and it does two things:
   `~/.openllm/.env` itself, so it too needs nothing from dsh.
 
 dsh holds **no key and no origin** — it just talks to `127.0.0.1:8787`, so the
-only thing it requires is that **`openllmd` is running**. Installing and starting
-OpenLLM is a prerequisite (below); this bundle does not install, prompt for, or
-onboard it. Runs on the host DeepSeek Harness — the services it patches
+only thing it requires is that **`openllmd` is running**. Installing OpenLLM is a
+prerequisite (below) — the installer starts the daemon for you; this bundle does
+not install, prompt for, or onboard it. Runs on the host DeepSeek Harness — the
+services it patches
 (`@deepseek-ai/dsh-llm-pi-ai`, `@deepseek-ai/dsh-mcp-client`) ship in
 `@deepseek-ai/dsh-base`.
 
 ## Prerequisite — install OpenLLM
 
-Do this **once, before (or after) adding the bundle**. dsh routes to the local
-OpenLLM daemon, so it must be installed and running:
+Do this **once** — dsh routes to the local OpenLLM daemon, and the installer sets
+it up and starts it for you (macOS / Linux):
 
 ```sh
-# 1. Install the OpenLLM CLI + daemon (macOS / Linux).
 curl -fsSL https://www.openllm.sh/install | bash
-
-# 2. Sign in, get a key, and start the daemon that serves dsh
-#    (interactive: prints the sign-in URL, then reads + persists your key):
-openllm start
-
-# 3. Verify
-openllm doctor && openllm --version
 ```
 
-> The `install | bash` line is **OpenLLM's own official installer** (canonical
-> source: <https://openllm.sh/install>); it digest-verifies the binaries it
-> downloads. If your policy requires it, fetch and read the script before piping
-> it to a shell. This bundle only documents the prerequisite — it never runs it.
+> This is **OpenLLM's own official installer** (canonical source:
+> <https://openllm.sh/install>); it digest-verifies the binaries it downloads. If
+> your policy requires it, fetch and read the script before piping it to a shell.
+> This bundle only documents the prerequisite — it never runs it.
 
-There is nothing to paste or export into your shell — `openllm start` persists
-the key to `~/.openllm/.env`, and the daemon serves dsh from there.
+There is nothing else to run, paste, or export — the installer starts the daemon
+and persists your key to `~/.openllm/.env`, and the daemon serves dsh from there.
 
 ## Install the bundle
 
