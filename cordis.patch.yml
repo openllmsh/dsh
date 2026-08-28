@@ -29,10 +29,15 @@
         # a reserved attribution header, so this passes straight through.
         headers:
           Authorization: Bearer local
+        # contextWindow is a uniform 1M across tiers (matches every other
+        # OpenLLM integration); maxTokens is the MAX output ceiling across the
+        # models each tier fans out to in our catalog (packages/api/catalog):
+        # ultra→kimi_code/k3 262144, plus→kimi/alibaba 262144, lite→gemini
+        # flash-lite 65536.
         models:
-          - { id: ultra, name: "ultra (OpenLLM)", contextWindow: 262144, maxTokens: 16384 }
-          - { id: plus,  name: "plus (OpenLLM)",  contextWindow: 262144, maxTokens: 16384 }
-          - { id: lite,  name: "lite (OpenLLM)",  contextWindow: 131072, maxTokens: 8192 }
+          - { id: ultra, name: "ultra (OpenLLM)", contextWindow: 1000000, maxTokens: 262144 }
+          - { id: plus,  name: "plus (OpenLLM)",  contextWindow: 1000000, maxTokens: 262144 }
+          - { id: lite,  name: "lite (OpenLLM)",  contextWindow: 1000000, maxTokens: 65536 }
 
 - id: agent-default-model
   config:
