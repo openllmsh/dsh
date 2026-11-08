@@ -7,11 +7,11 @@
  * `@deepseek-ai/dsh-base`). The bundle:
  *   1. adds an `openllm` provider to dsh's in-box `llm-pi-ai` adapter, pointed at
  *      the daemon's local-first gateway (`127.0.0.1:8787`), and makes it default;
- *   2. registers the `openllm mcp` stdio server.
+ *   2. registers the `openllm mcp` stdio server at `~/.openllm/bin/openllm`.
  *
- * Installing OpenLLM is a documented prerequisite (`curl … /install | bash`, which
- * starts the daemon itself) — this bundle deliberately does NOT install, prompt
- * for, or onboard OpenLLM. See the README.
+ * Installing OpenLLM and signing in (`openllm login`) are documented
+ * prerequisites (`curl … /install | bash`, then login) — this bundle deliberately
+ * does NOT install, prompt for, or onboard OpenLLM. See the README.
  *
  * @module @openllmsh/dsh
  */

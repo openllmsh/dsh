@@ -1,4 +1,4 @@
-# @openllmsh/dsh — DeepSeek Harness bundle patch.
+# @openllmsh/dsh - DeepSeek Harness bundle patch.
 #
 # Layered AFTER @deepseek-ai/dsh-base, which already mounts `llm`,
 # `llm-pi-ai` (dormant), `llm-deepseek`, and `agent-default-model`. This patch:
@@ -6,51 +6,111 @@
 #   2. points the default conversation model at it,
 #   3. registers the OpenLLM MCP server over stdio.
 #
-# Install OpenLLM first (README prerequisite) — this bundle does NOT install,
-# prompt for, or onboard it. No secrets, and none needed: dsh reaches OpenLLM
-# through the daemon's local-first gateway on 127.0.0.1:8787, a loopback surface
-# with no auth gate (the daemon fetches signed plans with its OWN ~/.openllm/.env
-# credentials and forwards upstream). So dsh holds no API key and no origin;
-# `openllmd` just has to be running (the installer starts it).
+# Install OpenLLM and sign in first (README prerequisite). This bundle does NOT
+# install, prompt for, or onboard it. No secrets in dsh: requests go to the
+# daemon's local-first gateway on 127.0.0.1:8787. pi-ai still requires a bearer
+# or apiKey before it will send (`Authorization: Bearer local` below). The
+# daemon treats a non-`sk-llm-` placeholder bearer as the saved login
+# (packages/cli/daemon/src/credential-gate.ts resolveLoopbackCallerKey), so
+# `openllm login` must already have succeeded; dsh itself holds no key.
 
-# 1 + 2 — Router: OpenLLM provider on pi-ai, and the default model.
+# 1 + 2 - Router: OpenLLM provider on pi-ai, and the default model.
 - id: llm-pi-ai
   config:
     providers:
       openllm:
         displayName: OpenLLM
         api: openai-completions
-        # Local daemon gateway — no apiKeyEnv (the loopback surface ignores auth).
         baseURL: http://127.0.0.1:8787/v1
         # pi-ai's openai-completions client still refuses to send a request with
         # neither an apiKey nor an Authorization header ("No API key for provider").
-        # The loopback gateway ignores the value, so a dummy bearer satisfies the
-        # client-side guard without dsh holding a real key. `Authorization` is not
-        # a reserved attribution header, so this passes straight through.
+        # The daemon runs this placeholder as the saved login (see header comment).
         headers:
           Authorization: Bearer local
+        # Vision: ultra/plus/lite may fan out to vision models; declare once at
+        # the route (llm-pi-ai config.ts defaultInput) instead of per entry.
+        defaultInput: [text, image]
+        # Default thinking level when the harness does not name one.
+        reasoning: medium
+        # Compat: only overrides where detectCompat for an unknown openai-completions
+        # base URL (127.0.0.1) would send something OpenLLM rejects or misroutes.
+        compat:
+          # detectCompat sets supportsDeveloperRole=true for non-catalog URLs
+          # (@earendil-works/pi-ai openai-completions.js detectCompat); convertMessages
+          # then emits role "developer" for the system prompt when model.reasoning
+          # is true. OpenLLM ChatMessage accepts only system|user|assistant|tool
+          # (packages/sdk/protocol/chat.ts) - no developer role - so disable it.
+          supportsDeveloperRole: false
         # contextWindow is a uniform 1M across tiers (matches every other
         # OpenLLM integration); maxTokens is the MAX output ceiling across the
         # models each tier fans out to in our catalog (packages/api/catalog):
         # ultra→kimi_code/k3 262144, plus→kimi/alibaba 262144, lite→gemini
         # flash-lite 65536.
         models:
-          - { id: ultra, name: "ultra (OpenLLM)", contextWindow: 1000000, maxTokens: 262144 }
-          - { id: plus,  name: "plus (OpenLLM)",  contextWindow: 1000000, maxTokens: 262144 }
-          - { id: lite,  name: "lite (OpenLLM)",  contextWindow: 1000000, maxTokens: 65536 }
+          - id: ultra
+            name: "ultra (OpenLLM)"
+            contextWindow: 1000000
+            maxTokens: 262144
+            # Map pi-ai thinking levels to OpenLLM reasoning_effort
+            # (none|minimal|low|medium|high|xhigh|max).
+            reasoningEfforts:
+              off: none
+              minimal: minimal
+              low: low
+              medium: medium
+              high: high
+              xhigh: xhigh
+              max: max
+          - id: plus
+            name: "plus (OpenLLM)"
+            contextWindow: 1000000
+            maxTokens: 262144
+            reasoningEfforts:
+              off: none
+              minimal: minimal
+              low: low
+              medium: medium
+              high: high
+              xhigh: xhigh
+              max: max
+          - id: lite
+            name: "lite (OpenLLM)"
+            contextWindow: 1000000
+            maxTokens: 65536
+            reasoningEfforts:
+              off: none
+              minimal: minimal
+              low: low
+              medium: medium
+              high: high
+              xhigh: xhigh
+              max: max
 
 - id: agent-default-model
   config:
     provider: openllm
     model: ultra
 
-# 3 — MCP server (stdio). `command: openllm` resolves ~/.openllm/.env itself.
+# 3 - MCP server (stdio).
+# mcp-client passes `command` to StdioClientTransport with no tilde expansion
+# (packages/mcp/mcp-client/src/transport.ts; expandHomePath is not used there).
+# Cordis config does evaluate `!!js` inside entry config
+# (docs/cordis-tutorial/05-config.md), so resolve the installer binary path via
+# HOME: packages/cli/install.sh sets OPENLLM_DIR="$HOME/.openllm" and
+# BIN_DIR="$OPENLLM_DIR/bin".
 - insert:
     - id: mcp-openllm
       name: '@deepseek-ai/dsh-mcp-client'
       config:
         serverName: openllm
         transport: stdio
-        command: openllm
+        command: !!js "process.env.HOME ? `${process.env.HOME}/.openllm/bin/openllm` : 'openllm'"
         args: ['mcp']
         env: {}
+        # First MCP call can race daemon/mcp server startup; keep soft fail and
+        # reconnect quickly (schema: failOnStartupError, reconnect.initialDelayMs;
+        # defaults in packages/mcp/mcp-client/src/connection.ts RECONNECT_DEFAULTS).
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 100
