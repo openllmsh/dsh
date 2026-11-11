@@ -1,134 +1,115 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="./assets/openllm-light.svg">
-    <img alt="OpenLLM" src="./assets/openllm.svg" width="300">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openllmsh/dsh/main/assets/openllm-light.svg">
+    <img alt="OpenLLM" src="https://raw.githubusercontent.com/openllmsh/dsh/main/assets/openllm.svg" width="300">
   </picture>
 </p>
 
-<p align="center"><b>@openllmsh/dsh</b> - route DeepSeek Harness through OpenLLM.</p>
+<p align="center"><b>@openllmsh/dsh</b> — route DeepSeek Harness through OpenLLM.</p>
 
 <p align="center">
-  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="dsh-plugin" src="https://img.shields.io/badge/dsh-plugin-informational.svg">
-  <img alt="platforms" src="https://img.shields.io/badge/platforms-darwin%20%C2%B7%20linux-lightgrey.svg">
+  <a href="https://www.npmjs.com/package/@openllmsh/dsh"><img alt="npm" src="https://img.shields.io/npm/v/@openllmsh/dsh.svg"></a>
+  <a href="https://www.npmjs.com/package/@openllmsh/dsh?activeTab=versions"><img alt="npm next" src="https://img.shields.io/npm/v/@openllmsh/dsh/next.svg?label=next"></a>
+  <a href="https://github.com/openllmsh/dsh/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="dsh plugin" src="https://img.shields.io/badge/dsh-plugin-blue.svg">
 </p>
 
 ---
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`)
-bundle that points the harness at the [OpenLLM](https://www.openllm.sh) gateway and
-hands it OpenLLM's MCP tools. It is a **pure-config Cordis patch layer**,
-installed from the dsh side, with no runtime code. It does two things:
+plugin that runs the harness on OpenLLM models and gives it OpenLLM's MCP tools.
+It is a pure-config Cordis patch with no runtime code.
 
-- **LLM router** - adds an `openllm` provider to dsh's in-box `llm-pi-ai`
-  adapter (`openai-completions`) pointed at the daemon's **local-first gateway**
-  (`http://127.0.0.1:8787/v1`) and makes it the default model. No adapter code,
-  and **no API key in dsh**: the daemon authenticates with the saved login from
-  `openllm login` and forwards upstream. Image input is enabled on the route;
-  thinking levels map to OpenLLM `reasoning_effort`
-  (`none|minimal|low|medium|high|xhigh|max`).
-- **MCP** - registers the OpenLLM MCP stdio server. The command resolves to
-  `$HOME/.openllm/bin/openllm` (installer binary path) with args `['mcp']`, so
-  Desktop/GUI launches that do not inherit a shell `PATH` still find it.
+- **OpenLLM as the default model.** Adds an `openllm` provider to dsh's in-box
+  `llm-pi-ai` adapter, pointed at the local daemon (`http://127.0.0.1:8787/v1`),
+  with the `ultra`, `plus` and `lite` models (`ultra` by default).
+- **Images and reasoning.** Image input is on, and dsh thinking levels map to
+  OpenLLM `reasoning_effort` (`off` to `none`, then `minimal` through `max`).
+- **No key in dsh.** The daemon serves requests with your saved `openllm login`,
+  so there is nothing to paste or export.
+- **MCP that works from the Desktop app.** The OpenLLM MCP server is started from
+  `$HOME/.openllm/bin/openllm`, so GUI launches without your shell `PATH` still
+  find it, and a failed first connect retries quickly.
 
-dsh holds **no key and no origin** - it talks to `127.0.0.1:8787` with a
-placeholder bearer that the daemon runs as the saved login. Installing OpenLLM
-and signing in are prerequisites (below). Runs on the host DeepSeek Harness;
-the services it patches (`@deepseek-ai/dsh-llm-pi-ai`, `@deepseek-ai/dsh-mcp-client`)
-ship in `@deepseek-ai/dsh-base`.
+[OpenLLM](https://www.openllm.sh) routes your API keys, local vendors and local
+models through one format-agnostic endpoint. See the
+[documentation](https://docs.openllm.sh).
 
-OpenLLM routes your API keys, local vendors and local models through one
-format-agnostic endpoint. See the [OpenLLM documentation](https://docs.openllm.sh).
+## Before you begin
 
-## Prerequisite - install OpenLLM and sign in
-
-Do this **once** (macOS / Linux):
+Install OpenLLM with **Full** setup (dsh needs the local daemon, which Minimal
+does not run), sign in, and start the daemon. macOS and Linux:
 
 ```sh
 curl -fsSL https://www.openllm.sh/install | bash
 openllm login
+openllm start
+openllm status
 ```
 
-> This is **OpenLLM's own official installer** (canonical source:
-> <https://www.openllm.sh/install>); it digest-verifies the binaries it downloads. If
-> your policy requires it, fetch and read the script before piping it to a shell.
-> This bundle only documents the prerequisite - it never runs it.
+On macOS, the [Mac app](https://www.openllm.sh/download/mac) is an alternative.
 
-The installer places the binary at `~/.openllm/bin/openllm` and can start the
-daemon. `openllm login` saves credentials the daemon uses for loopback calls.
-There is nothing else to paste or export into dsh.
+Agents install with `bash -s -- --non-interactive --full`, which does not start
+the daemon. Then run `openllm login --non-interactive`, have the user approve
+the link, run the printed `openllm login --resume <id>`, and run `openllm start`.
 
-## Install the bundle
+## Install
 
-Install into the profile whose surface you actually run. dsh profiles are
-separate bundle stacks, so a bundle added to one profile is invisible to the
-others - the **browser UI lives only in the `web` profile** (`web` mounts
-`dsh-base` + `dsh-web-app`; `headless` mounts `dsh-base` + `dsh-headless`).
-The bare `default` profile is `dsh-base` only - no web surface - so adding the
-bundle there never reaches the web UI.
-
-Browser UI (`web` profile):
+Add the plugin to the profile you run. Profiles are separate, so a plugin in one
+is not visible in another.
 
 ```sh
-dsh plugin --profile web add @openllmsh/dsh
+dsh plugin --profile web add @openllmsh/dsh        # browser UI
+dsh plugin --profile headless add @openllmsh/dsh   # headless / CLI
+dsh plugin --profile web add @openllmsh/dsh@next   # the latest prerelease
 ```
 
-Headless / CLI (`headless` profile):
+Restart the profile afterwards. Each npm release is published by CI from this
+repository with [provenance](https://docs.npmjs.com/generating-provenance-statements).
+The same source is tagged here, so `github:openllmsh/dsh#vX.Y.Z` installs the
+identical code (`lib/` is committed, so no build step runs).
 
-```sh
-dsh plugin --profile headless add @openllmsh/dsh
-```
+## What it configures
 
-Then **restart the profile**. Prefer the npm package. The GitHub spec remains an
-alternative (`dsh plugin --profile web add github:openllmsh/dsh`, pin with
-`#<tag>`). The built `lib/` is committed, so a git install loads with no build
-step (and no pnpm `allowBuilds` prompt).
+| Setting | Value |
+| --- | --- |
+| Provider | `openllm` on `llm-pi-ai`, `openai-completions`, `http://127.0.0.1:8787/v1` |
+| Models | `ultra` (default), `plus`, `lite` |
+| Input | `text`, `image` |
+| Reasoning | default `medium`; `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| Compatibility | `supportsDeveloperRole: false` (OpenLLM takes the system prompt as `system`) |
+| MCP server | `openllm`, stdio, `$HOME/.openllm/bin/openllm mcp` (falls back to `openllm` on `PATH`) |
+| MCP startup | `failOnStartupError: false`, reconnect after 100 ms |
 
-## Images and reasoning
+All of it lives in [`cordis.patch.yml`](./cordis.patch.yml).
 
-- **Images** - the `openllm` route declares `defaultInput: [text, image]`, so
-  attached images are accepted when the resolved model supports vision.
-- **Reasoning** - dsh thinking levels map to OpenLLM `reasoning_effort` values
-  (`off` → `none`, then `minimal` through `max`). The route default is `medium`.
+## Common problems
 
-## MCP binary path and startup race
-
-The MCP entry uses `$HOME/.openllm/bin/openllm` (via Cordis `!!js`), not a bare
-`openllm` on `PATH`, so GUI hosts find the installer binary. If `HOME` is unset,
-it falls back to `openllm` on `PATH`.
-
-The first MCP tool call can fail while the OpenLLM MCP server or daemon is still
-starting. `failOnStartupError` stays false and reconnect uses a short initial
-delay; wait a moment and retry the call - it reconnects automatically.
-
-## Self-hosted / custom port
-
-The router base (`http://127.0.0.1:8787/v1`) is fixed in `cordis.patch.yml`. To
-route through a self-hosted OpenLLM, point the **daemon** at your origin when you
-install it - dsh still just talks to `127.0.0.1:8787`. A custom daemon port
-(`OPENLLM_DAEMON_PORT`) means editing the `baseURL` in `cordis.patch.yml` to match.
+| Symptom | Fix |
+| --- | --- |
+| `auth_error` mentioning `openllm login` | Sign the daemon in with `openllm login`. |
+| Connection refused on `127.0.0.1:8787` | Run `openllm start`, then `openllm status`. |
+| First MCP tool call fails right after startup | Wait a moment and retry. The client reconnects on its own. |
+| Daemon on a custom port (`OPENLLM_DAEMON_PORT`) | Change `baseURL` in `cordis.patch.yml` to match. |
 
 ## Develop
 
 ```sh
 pnpm install
-pnpm build            # tsdown → lib/index.mjs (+ .d.mts) - commit the result
-pnpm typecheck        # tsc --noEmit
-pnpm test             # vitest run
+pnpm build && pnpm typecheck && pnpm test
+npm pack && node scripts/smoke-npm.mjs openllmsh-dsh-*.tgz   # tarball smoke test
 
-dsh plugin --profile demo add .          # link this bundle into a scratch profile
-dsh --profile demo --dump-config         # inspect the composed plugin tree
+dsh plugin --profile demo add .     # link into a scratch profile
+dsh --profile demo --dump-config    # inspect the composed tree
 ```
 
-The bundle's substance is `cordis.patch.yml` (resolved via the `dsh.bundle.patch`
-manifest field); `src/index.ts` is an `export {}` placeholder with no runtime API,
-matching `@deepseek-ai/dsh-base`.
+`lib/` is committed for git installs, so rebuild and commit it when `src/`
+changes. dsh is pre-1.0; re-test against each `dsh` release.
 
-> `lib/` is committed (needed for git installs), so **rebuild and commit it
-> whenever `src/` changes** - a stale `lib/` is what git installs.
-
-> Developer preview - dsh is pre-1.0; pin and re-test against each `dsh` bump.
+Releases: bump `version`, tag `vX.Y.Z`, and publish a GitHub release.
+`.github/workflows/npm-publish.yml` tests, smoke-tests and publishes with npm
+trusted publishing (stable to `latest`, prereleases to `next`).
 
 ## License
 
-**MIT** © OpenLLM, INC - see [LICENSE](./LICENSE).
+**MIT** © OpenLLM, INC. See [`LICENSE`](./LICENSE).
